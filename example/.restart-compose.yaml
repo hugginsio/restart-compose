@@ -1,0 +1,5 @@
+# https://huggins.dev/restart-compose
+
+stacks:
+  - "nginx-one/compose.yaml"
+  - "nginx-two/compose.yaml"
