@@ -6,7 +6,9 @@ version: 3
 tasks:
   dev:
     desc: Run the program directly
-    cmd: "go run . -d example"
+    env:
+      DEBUG: true
+    cmd: "go run . -d ../webhook-playground"
   lint:
     desc: Lint all files
     cmd: "golangci-lint run"
