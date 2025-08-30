@@ -10,26 +10,16 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"strings"
 
-	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/client"
+	"github.com/hugginsio/restart-compose/internal/compose"
 	"gopkg.in/yaml.v3"
 )
 
 // Config represents the configuration structure for restart-compose
 type Config struct {
 	Stacks []string `yaml:"stacks"`
-}
-
-// StackInfo holds information about a Docker Compose stack
-type StackInfo struct {
-	Path      string
-	Name      string
-	Services  []types.Container
-	Exists    bool
-	Directory string
 }
 
 // loadConfig reads and parses the .restart-compose.yaml configuration file
@@ -101,7 +91,7 @@ func getStackName(stackPath string) string {
 }
 
 // getStackServices retrieves running containers for a specific stack
-func getStackServices(ctx context.Context, dockerClient *client.Client, stackName string) ([]types.Container, error) {
+func getStackServices(ctx context.Context, dockerClient *client.Client, stackName string) ([]container.Summary, error) {
 	containers, err := dockerClient.ContainerList(ctx, container.ListOptions{
 		All: true,
 	})
@@ -109,7 +99,7 @@ func getStackServices(ctx context.Context, dockerClient *client.Client, stackNam
 		return nil, fmt.Errorf("failed to list containers: %w", err)
 	}
 
-	var stackContainers []types.Container
+	var stackContainers []container.Summary
 	for _, container := range containers {
 		// Check if container belongs to the stack by looking at labels
 		if project, exists := container.Labels["com.docker.compose.project"]; exists && project == stackName {
@@ -121,14 +111,13 @@ func getStackServices(ctx context.Context, dockerClient *client.Client, stackNam
 }
 
 // printStackInfo displays information about a stack
-func printStackInfo(stack StackInfo) {
-	fmt.Printf("\n=== Stack: %s ===\n", stack.Name)
-	fmt.Printf("Path: %s\n", stack.Path)
-	fmt.Printf("Directory: %s\n", stack.Directory)
-	fmt.Printf("Exists: %t\n", stack.Exists)
+func printStackInfo(stack compose.StackInfo) {
+	log.Printf("=== Stack: %s ===\n", stack.Name)
+	log.Printf("Path: %s\n", stack.Path)
+	log.Printf("Exists: %t\n", stack.Exists)
 
 	if len(stack.Services) > 0 {
-		fmt.Printf("Services (%d):\n", len(stack.Services))
+		log.Printf("Services (%d):\n", len(stack.Services))
 		for _, service := range stack.Services {
 			status := "Unknown"
 			if len(service.Status) > 0 {
@@ -140,10 +129,10 @@ func printStackInfo(stack StackInfo) {
 				serviceName = name
 			}
 
-			fmt.Printf("  - %s: %s (%s)\n", serviceName, status, service.State)
+			log.Printf("  - %s: %s (%s)\n", serviceName, status, service.State)
 		}
 	} else {
-		fmt.Println("Services: None running")
+		log.Println("Services: None running")
 	}
 }
 
@@ -153,7 +142,7 @@ func main() {
 	flag.StringVar(&configDir, "d", "", "Directory to scan for .restart-compose.yaml config file (defaults to current directory)")
 	flag.Parse()
 
-	fmt.Println("Starting restart-compose webhook listener...")
+	log.Println("Starting restart-compose webhook listener...")
 
 	// Find configuration file
 	configPath, err := findConfigFile(configDir)
@@ -161,7 +150,7 @@ func main() {
 		log.Fatalf("Configuration error: %v", err)
 	}
 
-	fmt.Printf("Found configuration file: %s\n", configPath)
+	log.Printf("Found configuration file: %s\n", configPath)
 
 	// Load configuration
 	config, err := loadConfig(configPath)
@@ -173,7 +162,7 @@ func main() {
 		log.Fatal("No stacks configured in .restart-compose.yaml")
 	}
 
-	fmt.Printf("Loaded %d stack(s) from configuration\n", len(config.Stacks))
+	log.Printf("Loaded %d stack(s) from configuration\n", len(config.Stacks))
 
 	// Get the directory containing the config file
 	configDir = filepath.Dir(configPath)
@@ -183,23 +172,31 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to create Docker client: %v", err)
 	}
-	defer dockerClient.Close()
 
-	fmt.Println("Connected to Docker daemon")
+	defer func() {
+		if closeErr := dockerClient.Close(); closeErr != nil {
+			if err == nil {
+				err = closeErr
+			} else {
+				log.Printf("Additional error closing Docker client: %v", closeErr)
+			}
+		}
+	}()
+
+	log.Println("Connected to Docker daemon")
 
 	// Validate and gather information about each stack
-	var stacks []StackInfo
+	var stacks []compose.StackInfo
 	ctx := context.Background()
 
 	for _, stackPath := range config.Stacks {
 		stackName := getStackName(stackPath)
 		fullPath, exists := validateStackExists(configDir, stackPath)
 
-		stackInfo := StackInfo{
-			Path:      fullPath,
-			Name:      stackName,
-			Exists:    exists,
-			Directory: filepath.Dir(fullPath),
+		stackInfo := compose.StackInfo{
+			Path:   fullPath,
+			Name:   stackName,
+			Exists: exists,
 		}
 
 		if exists {
@@ -217,31 +214,26 @@ func main() {
 		stacks = append(stacks, stackInfo)
 	}
 
-	// Print stack information
-	fmt.Println("\n" + strings.Repeat("=", 50))
-	fmt.Println("DOCKER COMPOSE STACK INFORMATION")
-	fmt.Println(strings.Repeat("=", 50))
-
 	for _, stack := range stacks {
 		printStackInfo(stack)
 	}
 
-	fmt.Println("\n" + strings.Repeat("=", 50))
-	fmt.Printf("Summary: %d stack(s) configured, %d exist on filesystem\n",
+	log.Printf("Summary: %d stack(s) configured, %d exist on filesystem\n",
 		len(stacks),
 		countExistingStacks(stacks))
 
 	// TODO: Add webhook server implementation
-	fmt.Println("\nWebhook server functionality will be implemented next...")
+	log.Println("Webhook server functionality will be implemented next...")
 }
 
 // countExistingStacks counts how many stacks actually exist on the filesystem
-func countExistingStacks(stacks []StackInfo) int {
+func countExistingStacks(stacks []compose.StackInfo) int {
 	count := 0
 	for _, stack := range stacks {
 		if stack.Exists {
 			count++
 		}
 	}
+
 	return count
 }
