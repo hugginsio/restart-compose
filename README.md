@@ -27,17 +27,18 @@ Finally, you need to run the `restart-compose` container itself, which can be do
 name: "restart-compose"
 services:
   watcher:
-    image: "TODO"
+    image: "ghcr.io/hugginsio/restart-compose:v0"
     restart: "unless-stopped"
     logging:
       driver: "local"
       options:
         max-file: "3"
         max-size: "5m"
+    env_file: [".env"]
     volumes:
-      - "/etc/localtime:/etc/localtime:ro"
-      - "restart-compose-tsnet:/app/tsnet" # required for tailnet persistence
-      - "TODO: pwd" # required for `git pull` updates
+      - "/var/run/docker.sock:/var/run/docker.sock" # required for container management
+      - "restart-compose-tsnet:/tmp/restart-compose" # required for tailnet persistence
+      - "/path-to-your-git-repo/:/data" # required to update your repository
 volumes:
   restart-compose-tsnet: {}
 ```
