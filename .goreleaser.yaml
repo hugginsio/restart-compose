@@ -1,0 +1,34 @@
+# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
+# https://goreleaser.com
+
+version: 2
+project_name: restart-compose
+before:
+  hooks:
+    - go mod tidy
+builds:
+  - id: "restart-compose"
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - "-buildvcs" # include VCS information
+    gcflags:
+      - "all=-l -C" # disable function inlining, error message column printing
+    ldflags:
+      - "-s -w" # disable symbol table, DWARF generation
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    goos:
+      - linux
+    ignore:
+      - goos: linux
+        goarch: "386"
+      - goos: linux
+        goarch: "arm64"
+changelog:
+  disable: true
+release:
+  mode: keep-existing
+  github:
+    owner: hugginsio
+    name: restart-compose
+  target_commitish: "{{ .Commit }}"
