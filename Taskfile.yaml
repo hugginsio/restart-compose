@@ -1,0 +1,19 @@
+# https://taskfile.dev
+# yaml-language-server: $schema=https://taskfile.dev/schema.json
+
+version: 3
+
+tasks:
+  dev:
+    desc: Run the program directly
+    dotenv:
+      - .env
+    env:
+      DEBUG: true
+    cmd: "go run . -d ../webhook-playground"
+  lint:
+    desc: Lint all files
+    cmd: "golangci-lint run"
+  test:
+    desc: Run tests
+    cmd: "go test -cover ./..."

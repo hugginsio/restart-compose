@@ -1,0 +1,13 @@
+name: "nginx-one"
+services:
+  nginx:
+    image: "docker.io/library/nginx:1.29.1@sha256:33e0bbc7ca9ecf108140af6288c7c9d1ecc77548cbfd3952fd8466a75edefe57"
+    container_name: "nginx-one"
+    restart: "unless-stopped"
+    logging:
+      driver: "local"
+      options:
+        max-file: "3"
+        max-size: "5m"
+    volumes:
+      - "/etc/localtime:/etc/localtime:ro"
